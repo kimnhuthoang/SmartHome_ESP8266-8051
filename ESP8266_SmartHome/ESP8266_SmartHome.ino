@@ -17,8 +17,8 @@ const char* ssid_ap = "ESP_SmartConfig";
 const char* pass_ap = "88888888";
 
 // Initialize Telegram BOT
-#define BOTtoken "5533976849:AAHTQm6IDro03WF8WpAyxUSvqUusR1HFD_Q" 
-#define CHAT_ID "1338702332"
+#define BOTtoken "*****************************" 
+#define CHAT_ID "**********"
 
 X509List cert(TELEGRAM_CERTIFICATE_ROOT);
 WiFiClientSecure telegram;
