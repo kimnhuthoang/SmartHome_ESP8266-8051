@@ -1,0 +1,115 @@
+C51 COMPILER V9.60.0.0   SOFT_I2C                                                          05/29/2023 21:21:15 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE SOFT_I2C
+OBJECT MODULE PLACED IN .\Objects\soft_i2c.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE soft_i2c.c OMF2 OPTIMIZE(8,SPEED) BROWSE DEBUG PRINT(.\Listings\soft_i2c
+                    -.lst) TABS(2) OBJECT(.\Objects\soft_i2c.obj)
+
+line level    source
+
+   1          
+   2          #include <REGX52.H>
+   3          #include "soft_i2c.h"
+   4          
+   5          bit i2c_get_ack();
+   6          void i2c_ack();
+   7          void i2c_nack();
+   8          
+   9          void i2c_init()
+  10          {
+  11   1        SCL=1; SDA=1;
+  12   1      }
+  13          
+  14          void i2c_start()
+  15          {
+  16   1        SCL = 1; 
+  17   1        SDA = 1; 
+  18   1        SDA = 0; 
+  19   1        SCL = 0;
+  20   1      }
+  21          
+  22          void i2c_stop()
+  23          {   
+  24   1        SDA = 0;
+  25   1        SCL = 1;
+  26   1        SDA = 1;
+  27   1      }
+  28          
+  29          bit i2c_get_ack() //neu nhan ve 1 bit ACK = 0 la thanh cong
+  30          {
+  31   1        bit result;
+  32   1        SDA = 1;
+  33   1        SCL = 1;
+  34   1        result = SDA;
+  35   1        SCL = 0;
+  36   1        return result;
+  37   1      }
+  38          
+  39          bit i2c_write(unsigned char dat)
+  40          {
+  41   1        unsigned char i;
+  42   1        for(i=0;i<8;i++)
+  43   1        {
+  44   2         SDA = (bit)(dat&0x80); 
+  45   2         SCL = 1;
+  46   2         SCL = 0;
+  47   2         dat<<=1;
+  48   2        }
+  49   1        return(i2c_get_ack());
+  50   1      }
+  51          
+  52          void i2c_ack()
+  53          {
+  54   1        SDA = 0;
+C51 COMPILER V9.60.0.0   SOFT_I2C                                                          05/29/2023 21:21:15 PAGE 2   
+
+  55   1        SCL = 1;
+  56   1        SCL = 0;
+  57   1      }
+  58          
+  59          void i2c_nack()
+  60          {
+  61   1        SDA = 1;
+  62   1        SCL = 1;
+  63   1        SCL = 0;
+  64   1      }
+  65          
+  66          unsigned char i2c_read(bit ack)
+  67          {
+  68   1        unsigned char i, dat=0;
+  69   1        SDA = 1;
+  70   1        for(i=0;i<8;i++)
+  71   1        {
+  72   2          dat <<= 1;
+  73   2          SCL = 1;
+  74   2          if(SDA)
+  75   2          {
+  76   3            dat|= 0x01;
+  77   3          }
+  78   2          SCL = 0;
+  79   2        }
+  80   1        if(ack)i2c_ack();
+  81   1        else i2c_nack();
+  82   1        return dat;
+  83   1      }
+  84          
+  85          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    120    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       2
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

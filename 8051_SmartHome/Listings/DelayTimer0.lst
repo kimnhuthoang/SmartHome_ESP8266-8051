@@ -1,0 +1,43 @@
+C51 COMPILER V9.60.0.0   DELAYTIMER0                                                       05/29/2023 21:21:15 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE DELAYTIMER0
+OBJECT MODULE PLACED IN .\Objects\DelayTimer0.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE DelayTimer0.c OMF2 OPTIMIZE(8,SPEED) BROWSE DEBUG PRINT(.\Listings\Delay
+                    -Timer0.lst) TABS(2) OBJECT(.\Objects\DelayTimer0.obj)
+
+line level    source
+
+   1          
+   2          #include <REGX52.H>
+   3          #include "DelayTimer0.h"
+   4          
+   5          void T0_delay_us(unsigned int us)   
+   6          {
+   7   1        unsigned int value;
+   8   1        value = (65535 - us) + 20;
+   9   1        TH0 = value >> 8;     
+  10   1        TL0 = value & 0x00ff; 
+  11   1        TR0 = 1;            
+  12   1        while(TF0 == 0);    
+  13   1        TR0 = 0;            
+  14   1        TF0 = 0;            
+  15   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     22    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

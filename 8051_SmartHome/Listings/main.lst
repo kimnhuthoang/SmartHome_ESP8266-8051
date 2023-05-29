@@ -1,0 +1,995 @@
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE main.c OMF2 OPTIMIZE(8,SPEED) BROWSE DEBUG PRINT(.\Listings\main.lst) TA
+                    -BS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1           
+   2          /*Duoc viet boi Kim Nhut Hoang - 2002190238 - 10DHDT1*/ 
+   3          /*Su dung cac thu vien tu viet va cac thu vien tham khao tren internet
+   4            cua cac dong vi dieu khien khac tu sua lai de co the chay tren vi dieu
+   5            khien 8051
+   6          */
+   7          //----------------------------------------------------------------
+   8          //---Khai bao cac thu vien su dung---//
+   9          #include <REGX52.H>
+  10          #include <intrins.h>
+  11          #include "soft_i2c.h"
+  12          #include "i2c_lcd.h"
+  13          #include "eeprom_24Cxx.h"
+  14          #include "mfrc522.h"
+  15          #include "UartMode1.h"
+  16          #include "DelayTimer0.h"
+  17          //----------------------------------------------------------------
+  18          //---Khai bao va gan cac bien---//
+  19          #define DEVICE_STATE 250
+  20          
+  21          #define Den1_ON   0xfd
+  22          #define Den2_ON   0xfb
+  23          #define Den3_ON   0xf7
+  24          #define Quat1_ON  0xef
+  25          #define Quat2_ON  0xdf
+  26          #define Quat3_ON  0xbf
+  27          
+  28          #define Den1_OFF   0x02
+  29          #define Den2_OFF   0x04
+  30          #define Den3_OFF   0x08
+  31          #define Quat1_OFF  0x10
+  32          #define Quat2_OFF  0x20
+  33          #define Quat3_OFF  0x40
+  34          
+  35          #define IE74595_DS    P0_3
+  36          #define IE74595_STCP  P0_2
+  37          #define IE74595_SHCP  P0_1
+  38          
+  39          #define cot1   P1_7
+  40          #define cot2   P1_6
+  41          #define cot3   P1_5
+  42          #define hang1  P1_4
+  43          #define hang2  P1_3
+  44          #define hang3  P1_2
+  45          #define hang4  P1_1
+  46          
+  47          #define Reset  P0_7
+  48          #define Button_Open P3_7
+  49          
+  50          #define led_connect P0_0
+  51          #define Power       P0_5
+  52          #define Reset_ESP   P1_0
+  53          #define buzzer P2_0
+  54          #define door   P0_4
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 2   
+
+  55          
+  56          #define But_Den1   P3_2
+  57          #define But_Den2   P3_3
+  58          #define But_Den3   P3_4
+  59          #define But_Quat1  P3_5
+  60          #define But_Quat2  P3_6
+  61          //#define But_Quat3  P3_7
+  62          
+  63          unsigned char Buffer[18];
+  64          unsigned char idata Buffer_last[18];
+  65          bit uart_isr_flag = 0;
+  66          bit power_off = 1;
+  67          unsigned char dataIE74595 = 0xff;
+  68          
+  69          char x = 0, y = 0, wrong_time = 0, CPin_flag = 0;
+  70          unsigned char pin_default[4]={"1234"};
+  71          unsigned char pin_scan[4]; 
+  72          unsigned char pin_eeprom[4]; 
+  73          
+  74          unsigned char UID_Scan[4];
+  75          unsigned char UID_EEPROM[4];
+  76          //unsigned char RemoveCardValue[4]={0,0,0,0};
+  77          unsigned char Master_id[4]={0xe3,0x03,0x21,0x97};
+  78          
+  79          char check_id = 0; check_masterCard = 2; check_newcard = 0;
+  80          unsigned char open_menu = 0,select_menu = 0,enter_select = 0;
+  81          char AddrZero = 5; CardYes = 0; CardNo = 0; CardRemoveAddr = 5;
+  82          
+  83          //--------------------------------------------------------------
+  84          void show_main(); //hien thi man hinh chinh
+  85          void Write_eeprom(unsigned char *str,unsigned int address); //ghi 4byte du lieu vao EEPROM
+  86          void Read_eeprom(unsigned char *str,unsigned int address);  //Doc 4byte du lieu tu EEPROM
+  87          void IE74595_OutByte(unsigned char b); //xuat du lieu ra ic mo rong 74hc595
+  88          void clear_buff();  //Xoa mang dem
+  89          void copy_buff();
+  90          void Uart_handle(); //Ham xu li chuoi nhan tu UART
+  91          void Button_OnOff_Device(); //Nut nhan bat tat thiet bi
+  92          void servo_open();
+  93          void servo_close();
+  94          //--------------------------------------------------------------
+  95          // Keypad function
+  96          char Keypad(); // Ham quet ban phim
+  97          char Keypad_changePin(); //Ham quet phim khi doi Pass
+  98          void Check_Pin();  //Ham kiem tra Pass
+  99          void Change_Pin(); //Ham doi Pass
+ 100          void CheckOldPin_and_ChangePin(); //Ham kiem tra Pass cu va doi Pass moi
+ 101          void ScanKeyRFID_and_Check(); //Ham quet ban phim va quet the RFID va kiem tra
+ 102          void buzzer_ring(); //Ham tao am thanh cho coi Buzzer
+ 103          void Button_OpenDoor();
+ 104          void open_and_closed(); //Ham mo va dong cua
+ 105          void Reset_pin(); //Ham reset mat khau mac dinh
+ 106          //--------------------------------------------------------------
+ 107          // RFID function
+ 108          void Scan_RFID(); //Ham Scan the RFID
+ 109          char Check_Card(char UID_Scan[],char Data_Card[]); //Ham kiem tra the RFID
+ 110          void Check_Master(); //Ham kiem tra the Master
+ 111          void Menu_RFID(); //Ham menu RFID
+ 112          void Menu_RFID_All(); //Ham menu RFID
+ 113          void Menu_RFID_Select(); //Ham menu RFID
+ 114          void Compare_EEPROM(); //Ham so sanh du lieu luu trong EEPROM
+ 115          void FindEEPROM_Zero(); //Ham tim dia chi ko co du lieu trong EEPROM
+ 116          void addNew_Card(); //Ham them the RFID moi
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 3   
+
+ 117          void Remove_Card(); //Ham xoa the RFID
+ 118          //void Reset_MasterCard();
+ 119          //--------------------------------------------------------------
+ 120          
+ 121          void main()
+ 122          {
+ 123   1        Reset_ESP = 0; delay_ms(20); Reset_ESP = 1;
+ 124   1        door = 0; IE74595_STCP = 0; IE74595_SHCP = 0;
+ 125   1        TMOD |= 0x01; //Timer 0 che do 16bit
+ 126   1        uart_init(); uart_isrInit();
+ 127   1        EEPROM_AT24Cxx_init(0xA0,8);
+ 128   1        dataIE74595 = EEPROM_AT24Cxx_read(DEVICE_STATE);
+ 129   1        IE74595_OutByte(dataIE74595);
+ 130   1      
+ 131   1        MFRC522_Init();
+ 132   1        I2C_LCD_Init(0x4e);
+ 133   1        I2C_LCD_BackLight(1,0x4e);
+ 134   1        I2C_LCD_Init(0x4c);
+ 135   1        I2C_LCD_BackLight(1,0x4c);
+ 136   1        servo_close();
+ 137   1      
+ 138   1        delay_ms(10);
+ 139   1        I2C_LCD_Clear(0x4e);
+ 140   1        I2C_LCD_Gotoxy(2,1,0x4e); I2C_LCD_PutS("KIM NHUT HOANG",0x4e);
+ 141   1        I2C_LCD_Gotoxy(4,2,0x4e); I2C_LCD_PutS("2002190238",0x4e);
+ 142   1        
+ 143   1        I2C_LCD_Clear(0x4c);
+ 144   1        I2C_LCD_Gotoxy(3,1,0x4c);
+ 145   1        I2C_LCD_PutS("TIME: 00:00",0x4c);
+ 146   1        I2C_LCD_Gotoxy(1,2,0x4c);
+ 147   1        I2C_LCD_PutS(" T: 00",0x4c);I2C_LCD_PutC(0xdf,0x4c);I2C_LCD_PutC('C',0x4c);
+ 148   1        I2C_LCD_PutS("-H: 00%",0x4c);
+ 149   1        
+ 150   1        delay_ms(2000);
+ 151   1        show_main();
+ 152   1        while(1)
+ 153   1        {
+ 154   2          ScanKeyRFID_and_Check();
+ 155   2        }
+ 156   1      }
+ 157          //-------------------------------------------------------------------------
+ 158          
+ 159          void uart_isrfunction(void) interrupt 4 using 3
+ 160          {
+ 161   1        static unsigned char Str_len = 0;
+ 162   1        if(RI == 1)
+ 163   1        {
+ 164   2          Buffer[Str_len++] = SBUF;
+ 165   2          RI = 0;
+ 166   2          if(SBUF=='\n')
+ 167   2          {
+ 168   3            Str_len = 0; uart_isr_flag = 1;
+ 169   3      //      if(Buffer[0]=='S')
+ 170   3      //      {
+ 171   3      //        if(Buffer[1]=='1') led_connect = 0;
+ 172   3      //        else led_connect = 1;
+ 173   3      //        uart_isr_flag = 0;
+ 174   3      //        clear_buff();
+ 175   3      //      }
+ 176   3          }
+ 177   2        }
+ 178   1      }
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 4   
+
+ 179          
+ 180          void Uart_handle()
+ 181          {
+ 182   1        if(uart_isr_flag == 1)
+ 183   1        {
+ 184   2          uart_isr_flag = 0;
+ 185   2          copy_buff();
+ 186   2      //    clear_buff();
+ 187   2      //    ES = 0;
+ 188   2          if(Buffer_last[0]=='S')
+ 189   2          {
+ 190   3            if(Buffer_last[1]=='1') led_connect = 0;
+ 191   3            else led_connect = 1;
+ 192   3          }
+ 193   2          //---------------------------------------------------------------------------//
+ 194   2          else if(Buffer_last[0]=='d')
+ 195   2          {
+ 196   3            //------------------------------------------------------------------------//
+ 197   3                                        //DEN 1//
+ 198   3            if(Buffer_last[0]=='d' && Buffer_last[1]=='1')
+ 199   3            { 
+ 200   4              if(Buffer_last[2]=='1') IE74595_OutByte(dataIE74595&=Den1_ON);
+ 201   4              else IE74595_OutByte(dataIE74595|=Den1_OFF);
+ 202   4            }
+ 203   3            //------------------------------------------------------------------------//
+ 204   3                                          //DEN 2//
+ 205   3            if(Buffer_last[3]=='d' && Buffer_last[4]=='2')
+ 206   3            { 
+ 207   4              if(Buffer_last[5]=='1') IE74595_OutByte(dataIE74595&=Den2_ON);
+ 208   4              else IE74595_OutByte(dataIE74595|=Den2_OFF);
+ 209   4            }
+ 210   3            //------------------------------------------------------------------------//
+ 211   3                                          //DEN 3//
+ 212   3            if(Buffer_last[6]=='d' && Buffer_last[7]=='3')
+ 213   3            { 
+ 214   4              if(Buffer_last[8]=='1') IE74595_OutByte(dataIE74595&=Den3_ON);
+ 215   4              else IE74595_OutByte(dataIE74595|=Den3_OFF);
+ 216   4            }
+ 217   3            //------------------------------------------------------------------------//
+ 218   3                                          //QUAT 1//
+ 219   3            if(Buffer_last[9]=='q' && Buffer_last[10]=='1')
+ 220   3            { 
+ 221   4              if(Buffer_last[11]=='1') IE74595_OutByte(dataIE74595&=Quat1_ON);
+ 222   4              else IE74595_OutByte(dataIE74595|=Quat1_OFF);
+ 223   4            }
+ 224   3            //------------------------------------------------------------------------//
+ 225   3                                          //QUAT 2//
+ 226   3            if(Buffer_last[12]=='q' && Buffer_last[13]=='2')
+ 227   3            { 
+ 228   4              if(Buffer_last[14]=='1') IE74595_OutByte(dataIE74595&=Quat2_ON);
+ 229   4              else IE74595_OutByte(dataIE74595|=Quat2_OFF);
+ 230   4            }
+ 231   3            //------------------------------------------------------------------------//
+ 232   3                                          //QUAT 3//
+ 233   3            if(Buffer_last[15]=='q' && Buffer_last[16]=='3')
+ 234   3            { 
+ 235   4              if(Buffer_last[17]=='1') IE74595_OutByte(dataIE74595&=Quat3_ON);
+ 236   4              else IE74595_OutByte(dataIE74595|=Quat3_OFF);
+ 237   4            }
+ 238   3            //------------------------------------------------------------------------//
+ 239   3                                //LUU TRANG THAI VAO EEPROM//
+ 240   3            EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 5   
+
+ 241   3          }
+ 242   2          
+ 243   2          //------------------------------------------------------------------------//
+ 244   2          else
+ 245   2          {
+ 246   3                            //NHAN DU LIEU NHIET DO, DO AM VA THOI GIAN//
+ 247   3            if(Buffer_last[0]=='n' && Buffer_last[1]=='d')
+ 248   3            {
+ 249   4              I2C_LCD_Gotoxy(5,2,0x4c); I2C_LCD_PutnS(Buffer_last,2,2,0x4c);
+ 250   4            }
+ 251   3            if(Buffer_last[4]=='d' && Buffer_last[5]=='a')
+ 252   3            {
+ 253   4              I2C_LCD_Gotoxy(13,2,0x4c); I2C_LCD_PutnS(Buffer_last,6,2,0x4c);
+ 254   4            }
+ 255   3            if(Buffer_last[8]=='T')
+ 256   3            {
+ 257   4              I2C_LCD_Gotoxy(9 ,1,0x4c); I2C_LCD_PutnS(Buffer_last,9,5,0x4c);
+ 258   4            }
+ 259   3          }
+ 260   2          //------------------------------------------------------------------------//
+ 261   2      //    ES = 1;
+ 262   2        } 
+ 263   1      }
+ 264          
+ 265          void clear_buff()
+ 266          {
+ 267   1        char j;
+ 268   1        for(j = 0; j < 18; j++)
+ 269   1        {
+ 270   2          Buffer[j]='\0';
+ 271   2        }
+ 272   1      }
+ 273          
+ 274          void copy_buff()
+ 275          {
+ 276   1        char i;
+ 277   1        for(i = 0; i < 18; i++)
+ 278   1        {
+ 279   2          Buffer_last[i] = Buffer[i];
+ 280   2        }
+ 281   1      }
+ 282          //-------------------------------------------------------------------------
+ 283          void Button_OnOff_Device()
+ 284          {
+ 285   1        if(But_Den1 == 0)
+ 286   1        {
+ 287   2          while(But_Den1 == 0);
+ 288   2          if(dataIE74595&Den1_OFF){uart_write_text("TTd11\n"); IE74595_OutByte(dataIE74595&=Den1_ON);}
+ 289   2          else{uart_write_text("TTd10\n"); IE74595_OutByte(dataIE74595|=Den1_OFF);}
+ 290   2          EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+ 291   2        }
+ 292   1        if(But_Den2 == 0)
+ 293   1        {
+ 294   2          while(But_Den2 == 0);
+ 295   2          if(dataIE74595&Den2_OFF){uart_write_text("TTd21\n"); IE74595_OutByte(dataIE74595&=Den2_ON);}
+ 296   2          else{uart_write_text("TTd20\n"); IE74595_OutByte(dataIE74595|=Den2_OFF);}
+ 297   2          EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+ 298   2        }
+ 299   1        if(But_Den3 == 0)
+ 300   1        {
+ 301   2          while(But_Den3 == 0);
+ 302   2          if(dataIE74595&Den3_OFF){uart_write_text("TTd31\n"); IE74595_OutByte(dataIE74595&=Den3_ON);}
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 6   
+
+ 303   2          else{uart_write_text("TTd30\n"); IE74595_OutByte(dataIE74595|=Den3_OFF);}
+ 304   2          EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+ 305   2        }
+ 306   1        if(But_Quat1 == 0)
+ 307   1        {
+ 308   2          while(But_Quat1 == 0);
+ 309   2          if(dataIE74595&Quat1_OFF){uart_write_text("TTq11\n"); IE74595_OutByte(dataIE74595&=Quat1_ON);}
+ 310   2          else{uart_write_text("TTq10\n"); IE74595_OutByte(dataIE74595|=Quat1_OFF);}
+ 311   2          EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+ 312   2        }
+ 313   1        if(But_Quat2 == 0)
+ 314   1        {
+ 315   2          while(But_Quat2 == 0);
+ 316   2          if(dataIE74595&Quat2_OFF){uart_write_text("TTq21\n"); IE74595_OutByte(dataIE74595&=Quat2_ON);}
+ 317   2          else{uart_write_text("TTq20\n"); IE74595_OutByte(dataIE74595|=Quat2_OFF);}
+ 318   2          EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+ 319   2        }
+ 320   1      //  if(But_Quat3 == 0)
+ 321   1      //  {
+ 322   1      //    while(But_Quat3 == 0);
+ 323   1      //    if(dataIE74595&Quat3_OFF){uart_write_text("TTq31\n"); IE74595_OutByte(dataIE74595&=Quat3_ON);}
+ 324   1      //    else{uart_write_text("TTq30\n"); IE74595_OutByte(dataIE74595|=Quat3_OFF);}
+ 325   1      //    EEPROM_AT24Cxx_write(DEVICE_STATE,dataIE74595); delay_ms(20);
+ 326   1      //  }
+ 327   1      }
+ 328          
+ 329          //-------------------------------------------------------------------------
+ 330          void show_main()
+ 331          {
+ 332   1        I2C_LCD_WriteCmd(0x0f,0x4e);
+ 333   1        I2C_LCD_Clear(0x4e);
+ 334   1        I2C_LCD_Gotoxy(1,1,0x4e);
+ 335   1        I2C_LCD_PutS("ENTER PASSWORD...",0x4e);
+ 336   1        I2C_LCD_Gotoxy(1,2,0x4e);
+ 337   1        I2C_LCD_PutS("Pin Pass:",0x4e);
+ 338   1      }
+ 339          //-------------------------------------------------------------------------
+ 340          char Keypad()
+ 341          {
+ 342   1        while(1)
+ 343   1        {
+ 344   2          cot1 = 1; cot2 = 1; cot3 = 0;
+ 345   2          if(hang4 == 0){while(hang4 == 0);I2C_LCD_PutC('*',0x4e);return '1';}
+ 346   2          if(hang3 == 0){while(hang3 == 0);I2C_LCD_PutC('*',0x4e);return '4';}
+ 347   2          if(hang2 == 0){while(hang2 == 0);I2C_LCD_PutC('*',0x4e);return '7';}
+ 348   2          if(hang1 == 0){while(hang1 == 0);Change_Pin();break;} //ky tu *
+ 349   2      
+ 350   2          cot1 = 1; cot2 = 0; cot3 = 1;
+ 351   2          if(hang4 == 0){while(hang4 == 0);I2C_LCD_PutC('*',0x4e);return '2';}
+ 352   2          if(hang3 == 0){while(hang3 == 0);I2C_LCD_PutC('*',0x4e);return '5';}
+ 353   2          if(hang2 == 0){while(hang2 == 0);I2C_LCD_PutC('*',0x4e);return '8';}
+ 354   2          if(hang1 == 0){while(hang1 == 0);I2C_LCD_PutC('*',0x4e);return '0';} 
+ 355   2      
+ 356   2          cot1 = 0; cot2 = 1; cot3 = 1;
+ 357   2          if(hang4 == 0){while(hang4 == 0);I2C_LCD_PutC('*',0x4e);return '3';}
+ 358   2          if(hang3 == 0){while(hang3 == 0);I2C_LCD_PutC('*',0x4e);return '6';}
+ 359   2          if(hang2 == 0){while(hang2 == 0);I2C_LCD_PutC('*',0x4e);return '9';}
+ 360   2          if(hang1 == 0){while(hang1 == 0);Menu_RFID();x=1;break;} //ky tu #
+ 361   2          
+ 362   2          if(CPin_flag == 1) continue;
+ 363   2          
+ 364   2          if(Reset == 0){while(Reset == 0);Reset_pin();break;}
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 7   
+
+ 365   2          Button_OpenDoor();
+ 366   2          Button_OnOff_Device();
+ 367   2      //    Reset_MasterCard();
+ 368   2          Scan_RFID();
+ 369   2          Uart_handle();
+ 370   2          if(Power == 1 && power_off == 1){power_off = 0; uart_write_text("PWOF\n");}
+ 371   2        }
+ 372   1      }
+ 373          
+ 374          char Keypad_changePin()
+ 375          {
+ 376   1        while(1)
+ 377   1        {
+ 378   2          cot1 = 1; cot2 = 1; cot3 = 0;
+ 379   2          if(hang4==0){while(hang4==0);I2C_LCD_PutC('1',0x4e);return '1';}
+ 380   2          if(hang3==0){while(hang3==0);I2C_LCD_PutC('4',0x4e);return '4';}
+ 381   2          if(hang2==0){while(hang2==0);I2C_LCD_PutC('7',0x4e);return '7';}
+ 382   2      
+ 383   2          cot1 = 1; cot2 = 0; cot3 = 1;
+ 384   2          if(hang4==0){while(hang4==0);I2C_LCD_PutC('2',0x4e);return '2';}
+ 385   2          if(hang3==0){while(hang3==0);I2C_LCD_PutC('5',0x4e);return '5';}
+ 386   2          if(hang2==0){while(hang2==0);I2C_LCD_PutC('8',0x4e);return '8';}
+ 387   2          if(hang1==0){while(hang1==0);I2C_LCD_PutC('0',0x4e);return '0';} 
+ 388   2      
+ 389   2          cot1 = 0; cot2 = 1; cot3 = 1;
+ 390   2          if(hang4==0){while(hang4==0);I2C_LCD_PutC('3',0x4e);return '3';}
+ 391   2          if(hang3==0){while(hang3==0);I2C_LCD_PutC('6',0x4e);return '6';}
+ 392   2          if(hang2==0){while(hang2==0);I2C_LCD_PutC('9',0x4e);return '9';}
+ 393   2        }
+ 394   1      }
+ 395          
+ 396          void Change_Pin()
+ 397          {
+ 398   1          unsigned char i = 0;
+ 399   1          CPin_flag = 1;
+ 400   1          I2C_LCD_Clear(0x4e);
+ 401   1          I2C_LCD_Gotoxy(1,1,0x4e);
+ 402   1          I2C_LCD_PutS("CHANGE PASSWORD..",0x4e);
+ 403   1          delay_ms(10);
+ 404   1          I2C_LCD_Gotoxy(1,2,0x4e);
+ 405   1          I2C_LCD_PutS("Old Pass:",0x4e);
+ 406   1          while(pin_default[i]!='\0')
+ 407   1          {
+ 408   2            pin_scan[i] = Keypad();
+ 409   2            delay_ms(1);
+ 410   2            i++;
+ 411   2          }
+ 412   1          delay_ms(500);
+ 413   1          CheckOldPin_and_ChangePin();
+ 414   1          show_main();
+ 415   1          CPin_flag = 0;
+ 416   1          x=1;
+ 417   1      }
+ 418          
+ 419          void Check_Pin()
+ 420          {
+ 421   1        Read_eeprom(&pin_eeprom,200);
+ 422   1        if(pin_scan[0]==pin_eeprom[0]&&pin_scan[1]==pin_eeprom[1]
+ 423   1          &&pin_scan[2]==pin_eeprom[2]&&pin_scan[3]==pin_eeprom[3])
+ 424   1        {
+ 425   2          delay_ms(10);
+ 426   2          I2C_LCD_WriteCmd(0x0c,0x4e); I2C_LCD_Clear(0x4e);
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 8   
+
+ 427   2          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("PIN CORRECT...",0x4e);
+ 428   2          buzzer = 0; delay_ms(200); buzzer = 1;
+ 429   2          I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("DOOR OPENED...",0x4e);
+ 430   2          open_and_closed();
+ 431   2        }
+ 432   1        else
+ 433   1        {
+ 434   2          wrong_time++;
+ 435   2          I2C_LCD_WriteCmd(0x0c,0x4e); I2C_LCD_Clear(0x4e);
+ 436   2          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("PIN INCORRECT...",0x4e);
+ 437   2          I2C_LCD_Gotoxy(6,2,0x4e); I2C_LCD_PutNumber(wrong_time,0x4e); I2C_LCD_PutS(" time",0x4e);
+ 438   2          buzzer_ring();
+ 439   2          delay_ms(1000);
+ 440   2          y=1;
+ 441   2        }
+ 442   1        show_main();
+ 443   1      }
+ 444          
+ 445          void CheckOldPin_and_ChangePin()
+ 446          {
+ 447   1        char i=0;
+ 448   1        Read_eeprom(&pin_eeprom,200);
+ 449   1        if(pin_scan[0]==pin_eeprom[0]&&pin_scan[1]==pin_eeprom[1]
+ 450   1          &&pin_scan[2]==pin_eeprom[2]&&pin_scan[3]==pin_eeprom[3])
+ 451   1        {
+ 452   2          buzzer = 0; delay_ms(200); buzzer = 1;
+ 453   2          I2C_LCD_Clear(0x4e);
+ 454   2          I2C_LCD_Gotoxy(1,1,0x4e);
+ 455   2          I2C_LCD_PutS("CHANGE PASSWORD..",0x4e);
+ 456   2          delay_ms(10);
+ 457   2          I2C_LCD_Gotoxy(1,2,0x4e);
+ 458   2          I2C_LCD_PutS("New Pass:",0x4e);
+ 459   2          while(pin_default[i]!='\0')
+ 460   2          {
+ 461   3            pin_eeprom[i] = Keypad_changePin();
+ 462   3            delay_ms(1);
+ 463   3            i++;
+ 464   3          }
+ 465   2          Write_eeprom(&pin_eeprom,200);
+ 466   2          delay_ms(200);
+ 467   2          buzzer = 0; delay_ms(200); buzzer = 1;
+ 468   2          I2C_LCD_WriteCmd(0x0c,0x4e);
+ 469   2          I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("SUCCESSFUL...",0x4e);
+ 470   2          delay_ms(1000);
+ 471   2        }
+ 472   1        else
+ 473   1        {
+ 474   2          wrong_time++;
+ 475   2          I2C_LCD_WriteCmd(0x0c,0x4e); I2C_LCD_Clear(0x4e);
+ 476   2          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("PIN INCORRECT...",0x4e);
+ 477   2          I2C_LCD_Gotoxy(6,2,0x4e); I2C_LCD_PutNumber(wrong_time,0x4e); I2C_LCD_PutS(" time",0x4e);
+ 478   2          buzzer_ring();
+ 479   2          delay_ms(1000);
+ 480   2          y=1;
+ 481   2        }
+ 482   1      }
+ 483          
+ 484          void Button_OpenDoor()
+ 485          {
+ 486   1        char i;
+ 487   1        if(Button_Open == 0)
+ 488   1        {
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 9   
+
+ 489   2          while(Button_Open == 0);
+ 490   2          uart_write_text("DOP\n"); 
+ 491   2          I2C_LCD_Clear(0x4e);
+ 492   2          I2C_LCD_Gotoxy(1,1,0x4e);
+ 493   2          I2C_LCD_PutS("DOOR OPENED...",0x4e);
+ 494   2          buzzer = 0; delay_ms(200); buzzer = 1;
+ 495   2          servo_open();
+ 496   2          for(i = 5;i >= 0;i--)
+ 497   2          { 
+ 498   3            I2C_LCD_Gotoxy(9,2,0x4e);
+ 499   3            I2C_LCD_PutNumber(i,0x4e);
+ 500   3            I2C_LCD_PutC('s',0x4e);
+ 501   3            delay_ms(1000);
+ 502   3          }
+ 503   2          servo_close();
+ 504   2          show_main();
+ 505   2        }
+ 506   1      }
+ 507          
+ 508          void buzzer_ring()
+ 509          {
+ 510   1        char i;
+ 511   1        if(wrong_time < 3)
+ 512   1        {
+ 513   2          buzzer=0;delay_ms(200);buzzer=1;delay_ms(100);
+ 514   2          buzzer=0;delay_ms(200);buzzer=1;
+ 515   2        }
+ 516   1        else if(wrong_time >= 3)
+ 517   1        {
+ 518   2          wrong_time=0;
+ 519   2          uart_write_text("WR3\n");
+ 520   2          I2C_LCD_WriteCmd(0x0c,0x4e);
+ 521   2          I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("!!! WARNING !!! ",0x4e);
+ 522   2          for(i=0;i<20;i++){buzzer=!buzzer;delay_ms(200);}
+ 523   2        }
+ 524   1      }
+ 525          
+ 526          void open_and_closed()
+ 527          {
+ 528   1        char i;
+ 529   1        servo_open();
+ 530   1        uart_write_text("DOP\n");
+ 531   1        for(i = 5;i >= 0;i--)
+ 532   1        { 
+ 533   2          I2C_LCD_Gotoxy(15,2,0x4e);
+ 534   2          I2C_LCD_PutNumber(i,0x4e);
+ 535   2          I2C_LCD_PutC('s',0x4e);
+ 536   2          delay_ms(1000);
+ 537   2        }
+ 538   1        servo_close();
+ 539   1      }
+ 540          
+ 541          void ScanKeyRFID_and_Check()
+ 542          {
+ 543   1          unsigned char i=0;
+ 544   1          x=0; y=0;
+ 545   1          while(pin_default[i]!='\0')
+ 546   1          {
+ 547   2            pin_scan[i] = Keypad();
+ 548   2            if(x==1) return;
+ 549   2            if(y==1) return;
+ 550   2            i++;
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 10  
+
+ 551   2          }
+ 552   1          delay_ms(100);
+ 553   1          Check_Pin();
+ 554   1      }
+ 555          
+ 556          void Reset_pin()
+ 557          {
+ 558   1        I2C_LCD_WriteCmd(0x0c,0x4e); I2C_LCD_Clear(0x4e);
+ 559   1        I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS(" Reset Password ",0x4e);
+ 560   1        Write_eeprom(&pin_default,200);
+ 561   1        delay_ms(500);
+ 562   1        I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("Reset Successful",0x4e);
+ 563   1        delay_ms(2000);
+ 564   1        show_main();
+ 565   1        x=1;
+ 566   1      }
+ 567          
+ 568          void servo_open()
+ 569          {
+ 570   1        door = 1; T0_delay_us(2211); door = 0; T0_delay_us(16220);
+ 571   1        door = 1; T0_delay_us(2211); door = 0; T0_delay_us(16220);
+ 572   1      }
+ 573          void servo_close()
+ 574          {
+ 575   1        door = 1; T0_delay_us(1382); door = 0; T0_delay_us(17050);
+ 576   1        door = 1; T0_delay_us(1382); door = 0; T0_delay_us(17050);
+ 577   1      }
+ 578          //-------------------------------------------------------------------------
+ 579          void Scan_RFID()
+ 580          {
+ 581   1        char TagType;
+ 582   1        if(MFRC522_isCard(&TagType))
+ 583   1        {
+ 584   2          if(MFRC522_ReadCardSerial(&UID_Scan))
+ 585   2          {
+ 586   3            I2C_LCD_WriteCmd(0x0c,0x4e); I2C_LCD_Clear(0x4e);
+ 587   3            I2C_LCD_Gotoxy(2,1,0x4e); I2C_LCD_PutS("QUET THE RFID!",0x4e);
+ 588   3            Compare_EEPROM();
+ 589   3            if(CardYes == 1 && CardNo == 0)
+ 590   3            {
+ 591   4              buzzer = 0; delay_ms(200); buzzer = 1;
+ 592   4              delay_ms(1000);
+ 593   4              I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("QUET THANH CONG!",0x4e);
+ 594   4              I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("DOOR OPENED...",0x4e);
+ 595   4              open_and_closed();
+ 596   4            }
+ 597   3            else if(CardYes == 0 && CardNo > 0)
+ 598   3            {
+ 599   4              wrong_time++;
+ 600   4              I2C_LCD_WriteCmd(0x0c,0x4e);
+ 601   4              I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("!!! SAI THE !!! ",0x4e);
+ 602   4              I2C_LCD_Gotoxy(6,2,0x4e); I2C_LCD_PutNumber(wrong_time,0x4e); I2C_LCD_PutS(" time",0x4e);
+ 603   4              buzzer_ring();
+ 604   4              delay_ms(1000);
+ 605   4            }
+ 606   3            show_main();
+ 607   3          }
+ 608   2        }
+ 609   1        MFRC522_Halt();
+ 610   1      }
+ 611          
+ 612          char Check_Card(char UID_Scan[],char Data_Card[])
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 11  
+
+ 613          {
+ 614   1        char i;
+ 615   1        for(i=0;i<4;i++)
+ 616   1        {
+ 617   2          if(UID_Scan[i] == Data_Card[i]) check_id = 1;
+ 618   2          else {check_id = 0; break;}
+ 619   2        }
+ 620   1        return check_id;
+ 621   1      }
+ 622          
+ 623          void Check_Master()
+ 624          {
+ 625   1        char TagType;
+ 626   1        if(MFRC522_isCard(&TagType))
+ 627   1        {
+ 628   2          if(MFRC522_ReadCardSerial(&UID_Scan))
+ 629   2          {
+ 630   3            if(Check_Card(UID_Scan,Master_id)) check_masterCard = 1;
+ 631   3            else check_masterCard = 0;
+ 632   3          }
+ 633   2        }
+ 634   1        MFRC522_Halt();
+ 635   1      }
+ 636          
+ 637          void Menu_RFID()
+ 638          {
+ 639   1          I2C_LCD_WriteCmd(0x0c,0x4e);I2C_LCD_Clear(0x4e);
+ 640   1          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("Scan MasterCard!",0x4e);
+ 641   1          while(1)
+ 642   1          {
+ 643   2            Check_Master();
+ 644   2            if(check_masterCard == 1)
+ 645   2            {
+ 646   3              I2C_LCD_Gotoxy(5,2,0x4e); I2C_LCD_PutS("THE DUNG",0x4e); delay_ms(2000);
+ 647   3              check_masterCard = 2; break;
+ 648   3            }
+ 649   2            else if(check_masterCard == 0)
+ 650   2            {
+ 651   3              I2C_LCD_Gotoxy(5,2,0x4e); I2C_LCD_PutS("THE SAI",0x4e); delay_ms(2000);
+ 652   3              check_masterCard = 2; show_main(); return;
+ 653   3            }
+ 654   2          }
+ 655   1          open_menu = 1; Menu_RFID_All(); hang1 = 0; cot1 = 1; cot2 = 1;
+ 656   1          while(open_menu == 1)
+ 657   1          {
+ 658   2            if(cot2 == 0)
+ 659   2            {
+ 660   3              while(cot2 == 0);select_menu++;
+ 661   3              if(select_menu > 2) select_menu = 0;
+ 662   3              Menu_RFID_All();
+ 663   3            }
+ 664   2            if(cot1 == 0){while(cot1 == 0); enter_select = 1;}
+ 665   2            Menu_RFID_Select();
+ 666   2          }
+ 667   1          show_main();
+ 668   1          open_menu = 0; hang1 = 1;
+ 669   1      }
+ 670          
+ 671          void Menu_RFID_All()
+ 672          {
+ 673   1        if(open_menu == 1 && select_menu == 0)
+ 674   1        {
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 12  
+
+ 675   2          I2C_LCD_Clear(0x4e);
+ 676   2          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS(" THEM & XOA THE ",0x4e);
+ 677   2          I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("> THEM THE MOI  ",0x4e);
+ 678   2        }
+ 679   1        if(open_menu == 1 && select_menu == 1)
+ 680   1        {
+ 681   2          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("> XOA 1 THE     ",0x4e);
+ 682   2          I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("  XOA ALL THE   ",0x4e);
+ 683   2        }
+ 684   1                        
+ 685   1        if(open_menu == 1 && select_menu == 2)
+ 686   1        {
+ 687   2          I2C_LCD_Gotoxy(1,1,0x4e); I2C_LCD_PutS("  XOA 1 THE     ",0x4e);
+ 688   2          I2C_LCD_Gotoxy(1,2,0x4e); I2C_LCD_PutS("> THOAT         ",0x4e);
+ 689   2        }
+ 690   1      }
+ 691          
+ 692          void Menu_RFID_Select()
+ 693          {
+ 694   1        if(enter_select == 1 && select_menu == 0)
+ 695   1        {
+ 696   2          I2C_LCD_Clear(0x4e);
+ 697   2          I2C_LCD_Gotoxy(3,1,0x4e); I2C_LCD_PutS("THEM THE MOI",0x4e);
+ 698   2          I2C_LCD_Gotoxy(3,2,0x4e); I2C_LCD_PutS("MOI NHAP THE",0x4e);
+ 699   2          addNew_Card(); select_menu = 0;
+ 700   2        }
+ 701   1        if(enter_select == 1 && select_menu == 1)
+ 702   1        {
+ 703   2          I2C_LCD_Clear(0x4e);
+ 704   2          I2C_LCD_Gotoxy(4,1,0x4e); I2C_LCD_PutS("XOA 1 THE",0x4e);
+ 705   2          I2C_LCD_Gotoxy(3,2,0x4e); I2C_LCD_PutS("MOI NHAP THE",0x4e);
+ 706   2          Remove_Card(); select_menu = 0;
+ 707   2        }
+ 708   1        if(enter_select == 1 && select_menu == 2)
+ 709   1        {
+ 710   2          open_menu = 0; enter_select = 0; select_menu = 0;
+ 711   2        }
+ 712   1      }
+ 713          
+ 714          //void Reset_MasterCard()
+ 715          //{
+ 716          //  unsigned int i;
+ 717          //  if(P0_4 == 0)
+ 718          //  {
+ 719          //    while(P3_4 == 0);
+ 720          //    I2C_LCD_Clear(0x4e);
+ 721          //    I2C_LCD_Gotoxy(1,1,0x4e);
+ 722          //    I2C_LCD_PutS("Reset MasterCard",0x4e);
+ 723          //    Write_eeprom(&Master_id,1);
+ 724          //    delay_ms(20);
+ 725          //    EEPROM_AT24Cxx_write(0,5);
+ 726          //    delay_ms(500);
+ 727          //    I2C_LCD_Gotoxy(1,2,0x4e);
+ 728          //    I2C_LCD_PutS("Reset Successful",0x4e);
+ 729          //    delay_ms(2000);
+ 730          //    show_main();
+ 731          //  }
+ 732          //  if(P0_5 == 0)
+ 733          //  {
+ 734          //    while(P3_4 == 0);
+ 735          //    I2C_LCD_Clear(0x4e);
+ 736          //    I2C_LCD_Gotoxy(4,1,0x4e);
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 13  
+
+ 737          //    I2C_LCD_PutS("XOA EEPROM",0x4e);
+ 738          //    for(i=0;i<EEPROM_AT24Cxx_length();i++)
+ 739          //    {
+ 740          //      EEPROM_AT24Cxx_write(i,0);
+ 741          //      delay_ms(11);
+ 742          //    }
+ 743          //    I2C_LCD_Clear(0x4e);
+ 744          //    I2C_LCD_Gotoxy(2,1,0x4e);
+ 745          //    I2C_LCD_PutS("XOA THANH CONG",0x4e);
+ 746          //    delay_ms(2000);
+ 747          //    show_main();
+ 748          //  }
+ 749          //}
+ 750          
+ 751          void FindEEPROM_Zero()
+ 752          {
+ 753   1        for(AddrZero = 5; AddrZero < 200; AddrZero++)
+ 754   1        {
+ 755   2          delay_ms(15); 
+ 756   2          if(EEPROM_AT24Cxx_read(AddrZero) == 0) return;     
+ 757   2        }
+ 758   1      }
+ 759          
+ 760          void Compare_EEPROM()
+ 761          {
+ 762   1        unsigned char CardNumbers, CardAddr = 1;
+ 763   1        CardNumbers = EEPROM_AT24Cxx_read(0);
+ 764   1        delay_ms(15);
+ 765   1        while(CardAddr < CardNumbers)
+ 766   1        {
+ 767   2          Read_eeprom(&UID_EEPROM,CardAddr);
+ 768   2          delay_ms(15);
+ 769   2          if(Check_Card(UID_Scan,UID_EEPROM)){CardYes = 1; CardNo = 0; break;}
+ 770   2          else{CardYes = 0; CardNo += 1;}
+ 771   2          CardAddr += 4;
+ 772   2          CardRemoveAddr = CardAddr;
+ 773   2        }  
+ 774   1      }
+ 775          
+ 776          void Print_AddCard()
+ 777          {
+ 778   1        I2C_LCD_Gotoxy(1,2,0x4e);
+ 779   1        I2C_LCD_PutS("Save Successfull",0x4e);
+ 780   1        delay_ms(2000);
+ 781   1      }
+ 782          
+ 783          void Scan_NewCard()
+ 784          {
+ 785   1        char TagType;
+ 786   1        if(MFRC522_isCard(&TagType))
+ 787   1        {
+ 788   2          if(MFRC522_ReadCardSerial(&UID_Scan))
+ 789   2          {
+ 790   3            check_newcard = 1;
+ 791   3          }
+ 792   2        }
+ 793   1        MFRC522_Halt();
+ 794   1      }
+ 795          
+ 796          void addNew_Card()
+ 797          {
+ 798   1        unsigned int CardNumbers;
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 14  
+
+ 799   1        CardNumbers = EEPROM_AT24Cxx_read(0);
+ 800   1        delay_ms(15);
+ 801   1        while(check_newcard == 0)
+ 802   1        {
+ 803   2          Scan_NewCard();
+ 804   2        }
+ 805   1        check_newcard = 0;
+ 806   1        buzzer = 0; delay_ms(200); buzzer = 1;
+ 807   1        while(enter_select == 1)
+ 808   1        {
+ 809   2          if(CardNumbers == 5)
+ 810   2          {
+ 811   3            Write_eeprom(&UID_Scan,5); delay_ms(15);
+ 812   3            EEPROM_AT24Cxx_write(0,9); delay_ms(15);
+ 813   3            Print_AddCard();
+ 814   3            CardYes = 0; CardNo = 0; open_menu = 0; enter_select = 0; 
+ 815   3          }
+ 816   2          else if(CardNumbers > 5)
+ 817   2          {
+ 818   3            Compare_EEPROM();
+ 819   3            if(CardYes == 1 && CardNo == 0) //the da co
+ 820   3            {
+ 821   4              buzzer = 0; delay_ms(200); buzzer = 1;
+ 822   4              I2C_LCD_Gotoxy(1,2,0x4e);
+ 823   4              I2C_LCD_PutS("    The da co   ",0x4e);
+ 824   4              delay_ms(2000);
+ 825   4              CardYes = 0; CardNo = 0; open_menu = 0; enter_select = 0;
+ 826   4            }
+ 827   3            else if(CardYes == 0 && CardNo > 0) //the chua co
+ 828   3            {
+ 829   4              FindEEPROM_Zero();
+ 830   4              if(AddrZero == CardNumbers)
+ 831   4              {
+ 832   5                Write_eeprom(&UID_Scan,AddrZero); delay_ms(15);
+ 833   5                CardNumbers += 4;
+ 834   5                EEPROM_AT24Cxx_write(0,CardNumbers); delay_ms(15);
+ 835   5                Print_AddCard();
+ 836   5              }
+ 837   4              else if(AddrZero < CardNumbers)
+ 838   4              {
+ 839   5                Write_eeprom(&UID_Scan,AddrZero); delay_ms(15);
+ 840   5                Print_AddCard();
+ 841   5              }
+ 842   4              CardYes = 0; CardNo = 0; open_menu = 0; enter_select = 0;
+ 843   4            }
+ 844   3          }
+ 845   2        }
+ 846   1        FindEEPROM_Zero();
+ 847   1      }
+ 848          
+ 849          void Remove_Card()
+ 850          {
+ 851   1        unsigned int CardNumbers;
+ 852   1        CardNumbers = EEPROM_AT24Cxx_read(0);
+ 853   1        delay_ms(15);
+ 854   1        while(check_newcard == 0)
+ 855   1        {
+ 856   2          Scan_NewCard();
+ 857   2        }
+ 858   1        check_newcard = 0;
+ 859   1        buzzer = 0; delay_ms(200); buzzer = 1;
+ 860   1        while(enter_select == 1)
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 15  
+
+ 861   1        {
+ 862   2          if(CardNumbers == 5)
+ 863   2          {
+ 864   3            I2C_LCD_Gotoxy(1,2,0x4e);
+ 865   3            I2C_LCD_PutS("   CHUA CO THE  ",0x4e);
+ 866   3            delay_ms(2000);
+ 867   3            CardYes = 0; CardNo = 0; open_menu = 0; enter_select = 0;
+ 868   3          }
+ 869   2          else if(CardNumbers > 5)
+ 870   2          {
+ 871   3            Compare_EEPROM();
+ 872   3            if(CardYes == 1 && CardNo == 0)
+ 873   3            {
+ 874   4              if((CardRemoveAddr + 4) == CardNumbers)
+ 875   4              {
+ 876   5                FindEEPROM_Zero();
+ 877   5                if(AddrZero < CardRemoveAddr) EEPROM_AT24Cxx_write(0,(CardRemoveAddr-4));
+ 878   5                else if((AddrZero-4) == CardRemoveAddr) EEPROM_AT24Cxx_write(0,CardRemoveAddr);
+ 879   5              }
+ 880   4              delay_ms(20);
+ 881   4      //        Write_eeprom(&RemoveCardValue,CardRemoveAddr);
+ 882   4              Write_eeprom("\0\0\0\0",CardRemoveAddr);
+ 883   4              I2C_LCD_Gotoxy(1,2,0x4e);
+ 884   4              I2C_LCD_PutS("   DA XOA THE   ",0x4e);
+ 885   4              delay_ms(2000);
+ 886   4              CardYes = 0; CardNo = 0; open_menu = 0; enter_select = 0;
+ 887   4            }
+ 888   3            else if(CardYes == 0 && CardNo > 0)
+ 889   3            {
+ 890   4              I2C_LCD_Gotoxy(1,2,0x4e);
+ 891   4              I2C_LCD_PutS("    SAI THE     ",0x4e);
+ 892   4              delay_ms(2000);
+ 893   4              CardYes = 0; CardNo = 0; open_menu = 0; enter_select = 0;
+ 894   4            }
+ 895   3          }
+ 896   2        }
+ 897   1        FindEEPROM_Zero();
+ 898   1      }
+ 899          
+ 900          //---------------------------------------------------------
+ 901          void Write_eeprom(unsigned char *str,unsigned int address)
+ 902          {
+ 903   1        char i;
+ 904   1        for(i=0;i<4;i++)
+ 905   1        {
+ 906   2          EEPROM_AT24Cxx_write(address,*str);
+ 907   2          delay_ms(11);
+ 908   2          address++;
+ 909   2          str++;
+ 910   2        }
+ 911   1      }
+ 912          void Read_eeprom(unsigned char *str,unsigned int address)
+ 913          {
+ 914   1        char i;
+ 915   1        for(i=0;i<4;i++)
+ 916   1        {
+ 917   2          *str=EEPROM_AT24Cxx_read(address);
+ 918   2          delay_ms(11);
+ 919   2          address++;
+ 920   2          str++;
+ 921   2        }
+ 922   1      }
+C51 COMPILER V9.60.0.0   MAIN                                                              05/29/2023 21:21:15 PAGE 16  
+
+ 923          //--------------------------------------------------------------------
+ 924          void IE74595_OutByte(unsigned char b)
+ 925          {
+ 926   1        int i;
+ 927   1        for(i=0;i<8;i++)
+ 928   1        {
+ 929   2          IE74595_DS = (b&0x80)==0x80 ? 1:0;
+ 930   2          delay_ms(1);
+ 931   2          IE74595_SHCP = 1; _nop_();_nop_();_nop_(); IE74595_SHCP = 0;
+ 932   2          b <<= 1;
+ 933   2        }
+ 934   1        IE74595_STCP = 1; _nop_();_nop_();_nop_(); IE74595_STCP = 0;
+ 935   1      }
+ 936          //--------------------------------------------------------------------
+*** WARNING C291 IN LINE 372 OF main.c: not every exit path returns a value
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   4660    ----
+   CONSTANT SIZE    =    634    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     63      37
+   IDATA SIZE       =     18    ----
+   BIT SIZE         =      2    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

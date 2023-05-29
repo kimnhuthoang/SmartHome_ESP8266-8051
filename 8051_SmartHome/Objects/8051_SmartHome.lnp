@@ -1,0 +1,10 @@
+".\Objects\main.obj",
+".\Objects\DelayTimer0.obj",
+".\Objects\eeprom_24Cxx.obj",
+".\Objects\i2c_lcd.obj",
+".\Objects\mfrc522.obj",
+".\Objects\soft_i2c.obj",
+".\Objects\UartMode1.obj" 
+TO ".\Objects\8051_SmartHome" 
+
+PRINT(".\Listings\8051_SmartHome.map") ru 

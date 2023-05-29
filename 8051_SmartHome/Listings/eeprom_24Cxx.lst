@@ -1,0 +1,79 @@
+C51 COMPILER V9.60.0.0   EEPROM_24CXX                                                      05/29/2023 21:21:15 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE EEPROM_24CXX
+OBJECT MODULE PLACED IN .\Objects\eeprom_24Cxx.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE eeprom_24Cxx.c OMF2 OPTIMIZE(8,SPEED) BROWSE DEBUG PRINT(.\Listings\eepr
+                    -om_24Cxx.lst) TABS(2) OBJECT(.\Objects\eeprom_24Cxx.obj)
+
+line level    source
+
+   1          
+   2          #include "eeprom_24Cxx.h"
+   3          
+   4          static unsigned char AT24Cxx_address;
+   5          static unsigned long int AT24Cxx_size;
+   6          
+   7          void EEPROM_AT24Cxx_init(unsigned char address,unsigned long int size)
+   8          {
+   9   1        AT24Cxx_address = address;
+  10   1        AT24Cxx_size = size;
+  11   1      }
+  12          
+  13          unsigned char EEPROM_AT24Cxx_read(unsigned int address)
+  14          {
+  15   1        unsigned char data_read;
+  16   1        
+  17   1        i2c_start();
+  18   1        if(address<256) i2c_write(AT24Cxx_address);
+  19   1        else if(address>255&&address<512) i2c_write(AT24Cxx_address|0x02);
+  20   1        else if(address>511&&address<768) i2c_write(AT24Cxx_address|0x04);
+  21   1        else if(address>767&&address<1024) i2c_write(AT24Cxx_address|0x06);
+  22   1        i2c_write(address);
+  23   1        i2c_start();
+  24   1        if(address<256) i2c_write(AT24Cxx_address|0x01);
+  25   1        else if(address>255&&address<512) i2c_write(AT24Cxx_address|0x03);
+  26   1        else if(address>511&&address<768) i2c_write(AT24Cxx_address|0x05);
+  27   1        else if(address>767&&address<1024) i2c_write(AT24Cxx_address|0x07);
+  28   1        data_read = i2c_read(0);
+  29   1        i2c_stop();
+  30   1        
+  31   1        return data_read;
+  32   1      }
+  33          
+  34          void EEPROM_AT24Cxx_write(unsigned int address, unsigned char value)
+  35          {
+  36   1        i2c_start();
+  37   1        if(address<256) i2c_write(AT24Cxx_address);
+  38   1        else if(address>255&&address<512) i2c_write(AT24Cxx_address|0x02);
+  39   1        else if(address>511&&address<768) i2c_write(AT24Cxx_address|0x04);
+  40   1        else if(address>767&&address<1024) i2c_write(AT24Cxx_address|0x06);
+  41   1        i2c_write(address);
+  42   1        i2c_write(value);
+  43   1        i2c_stop();
+  44   1      }
+  45          
+  46          unsigned long int EEPROM_AT24Cxx_length()
+  47          {
+  48   1        return (AT24Cxx_size*128);
+  49   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    334    ----
+   CONSTANT SIZE    =   ----    ----
+C51 COMPILER V9.60.0.0   EEPROM_24CXX                                                      05/29/2023 21:21:15 PAGE 2   
+
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      5      11
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
